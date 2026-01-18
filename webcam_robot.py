@@ -14,8 +14,21 @@ except AttributeError:
 face_cascade = cv2.CascadeClassifier(path)
 
 def main():
-    # Mở Webcam (số 0 hoặc 1 tùy máy Jetson)
-    cap = cv2.VideoCapture(0, 200)
+    # Hàm mở Camera USB bằng GStreamer (Chuẩn Jetson)
+    def open_cam_on_jetson(sensor_id=0):
+        gst_str = (
+            "v4l2src device=/dev/video{} ! "    # Mở camera số 0
+            "image/jpeg, width=640, height=480, framerate=30/1 ! " # Ép dùng MJPEG cho nhẹ, 30fps
+            "jpegdec ! "                        # Giải nén
+            "videoconvert ! "                   # Chuyển đổi màu
+            "appsink"                           # Đưa vào OpenCV
+        ).format(sensor_id)
+        
+        return cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
+
+    # --- TRONG HÀM MAIN ---
+    # Thay dòng cap cũ bằng dòng này:
+    cap = open_cam_on_jetson(0)
     
     if not cap.isOpened():
         print("Loi: Khong mo duoc Camera!")
