@@ -15,7 +15,7 @@ face_cascade = cv2.CascadeClassifier(path)
 
 def main():
     # Mở Webcam (số 0 hoặc 1 tùy máy Jetson)
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     
     if not cap.isOpened():
         print("Loi: Khong mo duoc Camera!")
