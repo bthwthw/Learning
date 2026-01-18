@@ -4,7 +4,7 @@ Xử lý từng pixel trên ảnh qua các hàm negative, thresholding, log, pow
 import cv2
 import numpy as np
 
-image_path = r"C:\Users\Thu\OneDrive\Fablab\Project_Reception_Robot\Vision\Learning\xuong.png"
+image_path = r"C:\Users\Thu\OneDrive\Fablab\Project_Reception_Robot\Vision\Learning\tiger.jpg"
 
 img_color = cv2.imread(image_path) # image read -> chuyển ảnh thành ma trận 
 
