@@ -1,100 +1,96 @@
 # -*- coding: utf-8 -*-
 import cv2
 import numpy as np
+import time
 
-# --- CẤU HÌNH ---
-# Nếu máy báo lỗi không tìm thấy file xml, hãy tải file xml về để cùng thư mục
-# và sửa dòng dưới thành: face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+# --- CẤU HÌNH LOAD XML ---
 try:
     path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 except AttributeError:
-    # Dự phòng cho OpenCV đời cũ trên Python 2
     path = 'haarcascade_frontalface_default.xml'
 
 face_cascade = cv2.CascadeClassifier(path)
 
-def main():
-    # Hàm mở Camera USB bằng GStreamer (Chuẩn Jetson)
-    def open_cam_on_jetson(sensor_id=0):
-        gst_str = (
-            "v4l2src device=/dev/video{} ! "    # Mở camera số 0
-            "image/jpeg, width=640, height=480, framerate=30/1 ! " # Ép dùng MJPEG cho nhẹ, 30fps
-            "jpegdec ! "                        # Giải nén
-            "videoconvert ! "                   # Chuyển đổi màu
-            "appsink"                           # Đưa vào OpenCV
-        ).format(sensor_id)
-        
-        return cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
+def open_cam_on_jetson(sensor_id=0):
+    # Thử pipeline YUYV (Raw) trước vì nó tương thích với mọi loại cam rẻ tiền
+    # MJPEG nhanh hơn nhưng nhiều cam không hỗ trợ sẽ gây lỗi "Internal data stream"
+    gst_str = (
+        "v4l2src device=/dev/video{} ! "
+        "video/x-raw, width=640, height=480, framerate=30/1 ! " 
+        "videoconvert ! "
+        "appsink"
+    ).format(sensor_id)
+    return cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
 
-    # --- TRONG HÀM MAIN ---
-    # Thay dòng cap cũ bằng dòng này:
+def main():
     cap = open_cam_on_jetson(0)
     
     if not cap.isOpened():
-        print("Loi: Khong mo duoc Camera!")
+        print("Loi: Khong mo duoc Camera! Kiem tra lai day cam.")
         return
 
     deadzone = 50 
-    print("Robot Logic Started... Nhan 'q' de thoat.")
+    print("------------------------------------------------")
+    print("Robot Logic Started... (Chay ngam, khong hien cua so)")
+    print("Bam Ctrl + C de thoat.")
+    print("------------------------------------------------")
+
+    # Biến đếm để không lưu ảnh liên tục (hại thẻ nhớ)
+    count = 0
 
     while True:
         ret, frame = cap.read()
-        if not ret: break
+        if not ret: 
+            print("Khong doc duoc hinh tu Camera!")
+            break
 
         # Lật ảnh
         frame = cv2.flip(frame, 1)
-        
-        # Python 2 trả về tuple (h, w, c)
         height, width = frame.shape[:2]
         center_x = width // 2
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Detect
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
 
-        # Vẽ vạch
+        # Vẽ vạch vùng an toàn
         cv2.line(frame, (center_x - deadzone, 0), (center_x - deadzone, height), (0, 255, 255), 2)
         cv2.line(frame, (center_x + deadzone, 0), (center_x + deadzone, height), (0, 255, 255), 2)
 
         cmd = "DUNG YEN"
-        color = (100, 100, 100)
-
+        
         if len(faces) > 0:
-            # Python 2 vẫn chạy tốt logic này
             faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
             (x, y, w, h) = faces[0]
             
             face_center_x = x + w // 2
-            face_center_y = y + h // 2
             
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.circle(frame, (face_center_x, face_center_y), 5, (0, 0, 255), -1)
-
+            
             error = face_center_x - center_x
             
             if abs(error) < deadzone:
                 cmd = "DI THANG"
-                color = (0, 255, 0)
             elif error < 0:
                 cmd = "<<< RE TRAI"
-                color = (0, 0, 255)
             else:
                 cmd = "RE PHAI >>>"
-                color = (0, 0, 255)
                 
-            # Python 2 kén f-string, dùng format kiểu cũ cho chắc
-            cv2.putText(frame, "Error: " + str(error) + " px", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            # In ra màn hình Terminal (Đây là giao diện chính khi SSH)
+            print("Phat hien mat! Lenh: " + cmd + " | Error: " + str(error))
+        else:
+            # print("Dang tim kiem...") # Bỏ comment nếu muốn spam màn hình
+            pass
 
-        cv2.putText(frame, "CMD: " + cmd, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
-
-        cv2.imshow('Robot Vision Simulator', frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        # --- QUAN TRỌNG: Lưu ảnh thay vì hiện ảnh ---
+        # Cứ mỗi 10 khung hình (tầm 0.3 giây) thì lưu file 1 lần để xem
+        count += 1
+        if count % 10 == 0:
+            cv2.putText(frame, "CMD: " + cmd, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+            cv2.imwrite("camera_view.jpg", frame)
+            # Reset biến đếm để tránh tràn số (dù rất lâu mới tràn)
+            if count > 1000: count = 0
 
     cap.release()
-    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
