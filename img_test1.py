@@ -29,7 +29,7 @@ for i in range(img_gray.shape[0]): # shape[0] là chiều dọc, height
 #Log transformation s = c * log(1 + r)
 c = 255 / np.log(1 + np.max(img_gray))  # c là 1 hệ số để đảm báo khi r input lớn nhất thì s cũng cao nhất là 255 
 log_img = c * np.log(1 + img_gray)      # áp hàm log lên 
-log_img = np.clip(log_img, 0, 255).astype(np.uint8) # đưa về int8 để hiển thị, tại vì c xài phép chia có thể là thập phân, 
+log_img = np.clip(log_img, 0, 255).astype(np.uint8) # đưa về int8 để hiển thị, tại vì c xài phép chia ra thập phân, 
                                                     # nếu hiển thị thì nó ra thập phân sẽ bị lỗi 
 
 #Power law transformation s = c * r^gamma
