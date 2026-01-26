@@ -1,82 +1,81 @@
-# -*- coding: utf-8 -*-
 import cv2
 import numpy as np
-import time
 
-# Load XML
-try:
-    path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-except AttributeError:
-    path = 'haarcascade_frontalface_default.xml'
-face_cascade = cv2.CascadeClassifier(path)
-
-def open_cam_csi():
-    # Đây là chuỗi lệnh "Thần thánh" dành riêng cho Cam BG10 trên Jetson
-    gst_str = (
-        "nvarguscamerasrc ! "
-        "video/x-raw(memory:NVMM), width=1280, height=720, format=NV12, framerate=30/1 ! "
-        "nvvidconv ! "
-        "video/x-raw, width=640, height=360, format=BGRx ! " # Resize xuống nhỏ để detect cho nhanh
-        "videoconvert ! "
-        "video/x-raw, format=BGR ! "
-        "appsink"
-    )
-    return cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
+# Load bộ nhận diện khuôn mặt có sẵn của OpenCV (nhẹ, không cần cài thêm)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 def main():
-    print(">>> DANG KET NOI CAMERA CSI (IMX219) <<<")
-    cap = open_cam_csi()
+    # Mở Webcam laptop (số 0)
+    cap = cv2.VideoCapture(0)
     
-    if not cap.isOpened():
-        print("Loi: Van khong mo duoc! Kiem tra lai day cap CSI.")
-        return
+    # Giả lập thông số Robot
+    # Giả sử khung hình là 640 pixel. Tâm là 320.
+    # Vùng an toàn (Deadzone) là +- 50 pixel ở giữa.
+    deadzone = 50 
 
-    print(">>> KET NOI THANH CONG! <<<")
-    print("Nhan Ctrl+C de thoat...")
-
-    count = 0
-    cmd = "DUNG YEN"
+    print("Robot Logic Started... Nhấn 'q' để thoát.")
 
     while True:
         ret, frame = cap.read()
-        if not ret:
-            print("Mat tin hieu camera!")
-            break
+        if not ret: break
 
-        # Code xử lý cũ của bạn
-        # Lật ảnh (Vì cam CSI thường bị ngược)
-        frame = cv2.flip(frame, 0) # Thử 0 hoặc 1 hoặc -1 nếu bị ngược đầu
-        frame = cv2.flip(frame, 1) # Lật tiếp gương
+        # Lật ngược ảnh cho giống gương (để bạn dễ điều khiển trái phải)
+        frame = cv2.flip(frame, 1)
         
-        height, width = frame.shape[:2]
+        height, width, _ = frame.shape
         center_x = width // 2
-        
+
+        # Chuyển ảnh xám để nhận diện
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Phát hiện khuôn mặt
         faces = face_cascade.detectMultiScale(gray, 1.1, 4)
 
-        # Logic điều khiển
-        deadzone = 50
-        if len(faces) > 0:
-            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
-            (x, y, w, h) = faces[0]
-            face_center_x = x + w // 2
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            
-            error = face_center_x - center_x
-            if abs(error) < deadzone: cmd = "DI THANG"
-            elif error < 0: cmd = "<<< RE TRAI"
-            else: cmd = "RE PHAI >>>"
-            
-            print("Lenh: " + cmd + " | Error: " + str(error))
+        # Vẽ 2 vạch kẻ phân chia vùng Trái - Giữa - Phải
+        cv2.line(frame, (center_x - deadzone, 0), (center_x - deadzone, height), (0, 255, 255), 2)
+        cv2.line(frame, (center_x + deadzone, 0), (center_x + deadzone, height), (0, 255, 255), 2)
 
-        # Lưu ảnh check
-        count += 1
-        if count % 10 == 0:
-            cv2.putText(frame, "CMD: " + cmd, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            cv2.imwrite("csi_cam_view.jpg", frame)
-            if count > 1000: count = 0
+        cmd = "DUNG YEN (Searching...)"
+        color = (100, 100, 100)
+
+        if len(faces) > 0:
+            # Lấy khuôn mặt to nhất (gần nhất)
+            (x, y, w, h) = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
+            
+            # Tính tâm khuôn mặt
+            face_center_x = x + w // 2
+            face_center_y = y + h // 2
+            
+            # Vẽ hình vuông quanh mặt
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.circle(frame, (face_center_x, face_center_y), 5, (0, 0, 255), -1)
+
+            # --- LOGIC ĐIỀU KHIỂN ROBOT ---
+            error = face_center_x - center_x
+            
+            if abs(error) < deadzone:
+                cmd = "DI THANG (Forward)"
+                color = (0, 255, 0) # Xanh lá
+            elif error < 0:
+                cmd = "<<< RE TRAI (Turn Left)"
+                color = (0, 0, 255) # Đỏ
+            else:
+                cmd = "RE PHAI (Turn Right) >>>"
+                color = (0, 0, 255) # Đỏ
+                
+            # Hiện thông số sai số (Error)
+            cv2.putText(frame, f"Error: {error} px", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+        # Hiện lệnh điều khiển lên màn hình
+        cv2.putText(frame, f"CMD: {cmd}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
+
+        cv2.imshow('Robot Vision Simulator', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
     cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()
